@@ -1,8 +1,12 @@
 .twitch-margined {
-    margin-left: 25px;
-    margin-right: 25px;
+    margin-left: 25px !important;
+    margin-right: 25px !important;
 }
 
 .twitch-margined-top {
     margin-top: 45px;
+}
+
+.clickable:hover {
+    cursor: pointer;
 }

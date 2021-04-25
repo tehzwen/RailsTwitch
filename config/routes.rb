@@ -10,8 +10,15 @@ Rails.application.routes.draw do
       get 'channels/index'
       post 'channels/create'
       get 'channels/:id', to: 'channels#show'
+      get 'channels/refresh/:id', to: 'channels#refresh_channel'
       delete 'channels/:id', to: 'channels#destroy'
       put 'channels/update/:id', to: 'channels#update'
+
+      resources :channels do
+        collection do
+          get 'search'
+        end
+      end
     end
   end
   root 'homepage#index'

@@ -7,49 +7,50 @@ class Api::V1::ChannelsController < ApplicationController
   end
 
   def index
-    channel = Channel.all.order(created_at: :asc)
-    render(json: channel)
+    channels = Channel.all.order(created_at: :asc)
+    render(json: channels)
   end
 
-  def channel_find_or_create(opts = {})
-    Channel.find_or_create_by!(
-      title: opts.fetch(:title),
-      game_id: opts.fetch(:game_id),
-      language: opts.fetch(:broadcaster_language),
-      display_name: opts.fetch(:display_name),
-      is_live: opts.fetch(:is_live),
-      thumbnail_url: opts.fetch(:thumbnail_url),
-      started_at: Date.parse(opts.fetch(:started_at)),
-      game_name: opts.fetch(:game_name)
-    )
+  def refresh_channel()
+    if channel
+      updated_channel = @@twitch_client.get_channel(channel_name: channel[:display_name])
+      channel.update(transform_channel(updated_channel))
+      render(json: channel)
+    else
+      render(json: channel.errors)
+    end
+  end
+
+  def update_all_channels
+    channels = Channel.all.order(created_at: :asc)
+    channels.each do |value|
+      updated_channel = @@twitch_client.get_channel(channel_name: value[:display_name])
+      updated_channel = transform_channel(updated_channel)
+      value.update(updated_channel)
+    end
+  end
+
+  def search
+    results = @@twitch_client.search_channel(channel_name: @query)
+    results.sort_by do |r|
+      r['display_name']
+    end
   end
 
   def create
     selected_channel = nil
-    channels = @@twitch_client.get_channel(channel_name: channel_params.fetch(:display_name))
-    channels.each do |value|
-      if (value['display_name'].downcase == params.fetch(:display_name))
-        selected_channel = value.transform_keys(&:to_sym)
-        break
-      end
-    end
+    data = @@twitch_client.get_channel(channel_name: channel_params.fetch(:display_name))
+    channel = Channel.find_or_create_by!(transform_channel(data))
 
-    if (!selected_channel)
-      if (channels.length > 0)
-        selected_channel = channels.first.transform_keys(&:to_sym)
-        channel = channel_find_or_create(selected_channel)
-        render(json: channel)
-      else
-        render(json: "No results returned!!")
-      end
-    else
-      channel = channel_find_or_create(selected_channel)
+    if channel
       render(json: channel)
+    else
+      render(json: errors)
     end
   end
 
   def update!
-    channel.update(channel_params)
+    Channel.update(channel_params)
     channel.save
 
     render(json: channel)
@@ -70,6 +71,26 @@ class Api::V1::ChannelsController < ApplicationController
 
   private
 
+  def transform_channel(opts = {})
+    date = opts.fetch(:started_at)
+    transformed_channel = {
+      title: opts.fetch(:title),
+      game_id: opts.fetch(:game_id),
+      language: opts.fetch(:broadcaster_language) { "UNKNOWN" },
+      display_name: opts.fetch(:display_name),
+      is_live: opts.fetch(:is_live),
+      thumbnail_url: opts.fetch(:thumbnail_url),
+      game_name: opts.fetch(:game_name)
+    }
+
+    if (!date.empty?)
+      transformed_channel[:started_at] = Date.parse(date)
+    else
+      transformed_channel[:started_at] = nil
+    end
+    return transformed_channel
+  end
+
   def initialize_client!
     return if (@@twitch_client != nil)
 
@@ -81,8 +102,19 @@ class Api::V1::ChannelsController < ApplicationController
     @@twitch_client.authenticate
   end
 
+  def is_numeric?(o)
+    true if Integer(o) rescue false
+  end
+
   def channel
-    @channel = Channel.find(params[:id])
+    value = params.fetch(:id)
+    action = params.fetch(:action)
+    if (is_numeric?(value))
+      @channel = Channel.find(value)
+    elsif (action == 'show')
+      @query = params.fetch(:query)
+      search
+    end
   end
 
   def channel_params
